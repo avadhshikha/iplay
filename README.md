@@ -10,7 +10,9 @@ Next.js application for public turf bookings and private operations management.
 4. Run `npm install`, then `npm run dev`.
 
 Without Supabase environment variables, the public page runs in availability
-demo mode and booking submissions remain disabled.
+demo mode and booking submissions remain disabled. The admin panel remains
+fully interactive with session-based demo data so its workflows can be tested
+before Supabase is connected.
 
 ## Commands
 

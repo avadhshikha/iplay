@@ -8,6 +8,8 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 
+import { AdminDataProvider } from "@/components/admin/admin-data-provider";
+
 const items = [
   ["/admin", "Dashboard", LayoutDashboard],
   ["/admin/bookings", "Bookings", CalendarDays],
@@ -45,7 +47,7 @@ export default function AdminLayout({
             </Link>
           ))}
         </nav>
-        {children}
+        <AdminDataProvider>{children}</AdminDataProvider>
       </div>
     </div>
   );
