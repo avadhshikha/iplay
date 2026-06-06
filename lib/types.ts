@@ -1,4 +1,5 @@
 export type BookingStatus = "confirmed" | "cancelled" | "pending";
+export type PaymentMode = "cash" | "upi";
 
 export type SlotAvailability = {
   time: string;
@@ -14,5 +15,6 @@ export type BookingRequest = {
   booking_date: string;
   start_time: string;
   duration_hours: number;
+  payment_mode: PaymentMode;
   notes?: string;
 };

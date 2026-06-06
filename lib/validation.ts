@@ -10,6 +10,7 @@ export const bookingRequestSchema = z.object({
   customer_email: z.string().email().optional().or(z.literal("")),
   booking_date: dateOnlySchema,
   start_time: z.string().regex(/^\d{2}:\d{2}$/),
-  duration_hours: z.number().int().min(1).max(5),
+  duration_hours: z.number().min(0.5).max(5).refine((value) => Number.isInteger(value * 2)),
+  payment_mode: z.enum(["cash", "upi"]),
   notes: z.string().trim().max(200).optional().or(z.literal("")),
 });

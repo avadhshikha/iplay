@@ -16,8 +16,12 @@ export function getHourlyRate(date: string | Date) {
 }
 
 export function calculateBookingPrice(date: string | Date, durationHours: number) {
-  if (!Number.isInteger(durationHours) || durationHours < 1 || durationHours > 5) {
-    throw new Error("Duration must be between 1 and 5 whole hours.");
+  if (
+    !Number.isInteger(durationHours * 2) ||
+    durationHours < 0.5 ||
+    durationHours > 5
+  ) {
+    throw new Error("Duration must be between 30 minutes and 5 hours.");
   }
 
   return getHourlyRate(date) * durationHours;

@@ -7,7 +7,7 @@ const highlights = [
   {
     icon: CalendarDays,
     title: "Pick your time",
-    text: "Choose up to five consecutive hourly slots.",
+    text: "Choose your start time and play for 30 minutes up to 5 hours.",
   },
   {
     icon: Sparkles,

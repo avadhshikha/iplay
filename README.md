@@ -31,6 +31,12 @@ and member statuses in dedicated Supabase columns. Until it is applied, the app
 uses a compatibility format in contact notes so the contact-book workflow can
 still be used.
 
+Turf bookings support flexible 30-minute steps from 30 minutes to 5 hours.
+Invoices, turf bookings, transactions, exports, and contact history track
+payment mode as Cash or UPI. Apply
+`supabase/migrations/20260607020000_payment_modes_flexible_bookings.sql` before
+using fractional booking durations or payment-mode reporting.
+
 ## Security
 
 - The Supabase service-role key is server-only.

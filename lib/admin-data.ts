@@ -1,10 +1,11 @@
-import { getEndTime } from "@/lib/slots";
+import { formatSlotLabel, getEndTime } from "@/lib/slots";
 import type {
   AcademyProgramSlug,
   ClientType,
   InvoiceFeeKind,
   MemberStatus,
 } from "@/lib/academy-programs";
+import type { PaymentMode } from "@/lib/types";
 
 export type AdminBooking = {
   id: string;
@@ -15,6 +16,7 @@ export type AdminBooking = {
   startTime: string;
   durationHours: number;
   totalPrice: number;
+  paymentMode: PaymentMode;
   source: "online" | "manual";
   status: "confirmed" | "pending" | "cancelled";
 };
@@ -30,6 +32,7 @@ export type AdminInvoice = {
   feeKind: InvoiceFeeKind;
   description: string;
   amount: number;
+  paymentMode: PaymentMode;
   invoiceDate: string;
   status: "paid" | "pending" | "cancelled";
 };
@@ -52,11 +55,13 @@ export type AdminContact = {
 
 export type AdminTransaction = {
   id: string;
+  referenceId: string;
   date: string;
   type: "turf" | "yoga" | "chess" | "cricket";
   customerName: string;
   phone: string;
   amount: number;
+  paymentMode: PaymentMode;
   source: "booking" | "invoice";
   status: "completed" | "pending" | "refunded";
 };
@@ -76,5 +81,7 @@ export const emptyAdminData: AdminData = {
 };
 
 export function bookingTimeRange(booking: AdminBooking) {
-  return `${booking.startTime}–${getEndTime(booking.startTime, booking.durationHours)}`;
+  return `${formatSlotLabel(booking.startTime)} – ${formatSlotLabel(
+    getEndTime(booking.startTime, booking.durationHours),
+  )}`;
 }

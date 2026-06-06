@@ -49,6 +49,7 @@ export async function GET(
     feeKind: row.fee_kind ?? "monthly",
     description: row.description ?? "",
     amount: row.amount,
+    paymentMode: row.payment_mode ?? "cash",
     invoiceDate: row.invoice_date,
     status: row.status,
   };

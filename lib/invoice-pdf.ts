@@ -212,7 +212,9 @@ export async function createInvoicePdf(invoice: AdminInvoice) {
     page,
     fonts,
     "Payment",
-    invoice.status === "paid" ? "Received" : "Due",
+    invoice.status === "paid"
+      ? `Received via ${invoice.paymentMode.toUpperCase()}`
+      : `Due · ${invoice.paymentMode.toUpperCase()}`,
     PAGE_WIDTH - MARGIN - 150,
     PAGE_HEIGHT - 265,
   );

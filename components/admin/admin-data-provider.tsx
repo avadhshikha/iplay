@@ -8,6 +8,7 @@ import {
   type AdminContact,
   type AdminData,
   type AdminInvoice,
+  type AdminTransaction,
 } from "@/lib/admin-data";
 
 type AdminDataContextValue = {
@@ -30,6 +31,10 @@ type AdminDataContextValue = {
     >,
   ) => Promise<void>;
   updateContact: (contact: AdminContact) => Promise<void>;
+  updateTransactionPaymentMode: (
+    id: string,
+    paymentMode: AdminTransaction["paymentMode"],
+  ) => Promise<void>;
 };
 
 const AdminDataContext = createContext<AdminDataContextValue | null>(null);
@@ -126,6 +131,8 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
           runAction("PATCH", { resource: "invoice", id, status }),
         createContact: (contact) => runAction("POST", { resource: "contact", contact }),
         updateContact: (contact) => runAction("PATCH", { resource: "contact", contact }),
+        updateTransactionPaymentMode: (id, paymentMode) =>
+          runAction("PATCH", { resource: "transaction", id, paymentMode }),
       }}
     >
       {children}

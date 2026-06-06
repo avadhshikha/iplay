@@ -40,6 +40,7 @@ const invoiceSchema = z.object({
     "cricket_evening",
   ]),
   feeKind: z.enum(["monthly", "new_registration", "other"]),
+  paymentMode: z.enum(["cash", "upi"]),
   description: z.string().trim().max(300),
   amount: z.number().int().positive(),
   invoiceDate: dateOnlySchema,
@@ -107,7 +108,8 @@ function isCompatibilityError(error: { code?: string; message: string }) {
     error.message.includes("client_type") ||
     error.message.includes("program_slug") ||
     error.message.includes("member_status") ||
-    error.message.includes("fee_kind")
+    error.message.includes("fee_kind") ||
+    error.message.includes("payment_mode")
   );
 }
 
@@ -166,6 +168,7 @@ export async function GET() {
         startTime: row.start_time.slice(0, 5),
         durationHours: row.duration_hours,
         totalPrice: row.total_price,
+        paymentMode: row.payment_mode ?? "cash",
         source: row.source,
         status: row.status,
       }),
@@ -182,6 +185,7 @@ export async function GET() {
         feeKind: row.fee_kind ?? "monthly",
         description: row.description ?? "",
         amount: row.amount,
+        paymentMode: row.payment_mode ?? "cash",
         invoiceDate: row.invoice_date,
         status: row.status,
       }),
@@ -211,11 +215,13 @@ export async function GET() {
     transactions: transactions.data.map(
       (row): AdminTransaction => ({
         id: row.id,
+        referenceId: row.reference_id,
         date: row.transaction_date,
         type: row.type,
         customerName: row.customer_name,
         phone: row.customer_phone ?? "",
         amount: row.amount,
+        paymentMode: row.payment_mode ?? "cash",
         source: row.reference_type,
         status: row.status,
       }),
@@ -240,6 +246,7 @@ export async function POST(request: NextRequest) {
       booking_date: body.booking?.date,
       start_time: body.booking?.startTime,
       duration_hours: body.booking?.durationHours,
+      payment_mode: body.booking?.paymentMode,
       status: body.booking?.status,
     });
 
@@ -288,7 +295,7 @@ export async function POST(request: NextRequest) {
     }
 
     const hourlyRate = calculateBookingPrice(booking.booking_date, 1);
-    const result = await supabase.from("bookings").insert({
+    let result = await supabase.from("bookings").insert({
       customer_name: booking.customer_name,
       customer_phone: booking.customer_phone,
       customer_email: booking.customer_email || null,
@@ -298,13 +305,43 @@ export async function POST(request: NextRequest) {
       end_time: endTime,
       price_per_hour: hourlyRate,
       total_price: calculateBookingPrice(booking.booking_date, booking.duration_hours),
+      payment_mode: booking.payment_mode,
       day_type: isWeekend(booking.booking_date) ? "weekend" : "weekday",
       status: booking.status,
       source: "manual",
     });
 
+    if (result.error?.message.includes("payment_mode")) {
+      result = await supabase.from("bookings").insert({
+        customer_name: booking.customer_name,
+        customer_phone: booking.customer_phone,
+        customer_email: booking.customer_email || null,
+        booking_date: booking.booking_date,
+        start_time: booking.start_time,
+        duration_hours: booking.duration_hours,
+        end_time: endTime,
+        price_per_hour: hourlyRate,
+        total_price: calculateBookingPrice(booking.booking_date, booking.duration_hours),
+        day_type: isWeekend(booking.booking_date) ? "weekend" : "weekday",
+        status: booking.status,
+        source: "manual",
+      });
+    }
+
     if (result.error) {
-      return NextResponse.json({ error: result.error.message }, { status: 500 });
+      const migrationRequired =
+        !Number.isInteger(booking.duration_hours) &&
+        (result.error.message.includes("duration_hours") ||
+          result.error.message.includes("smallint") ||
+          result.error.message.includes("invalid input syntax"));
+      return NextResponse.json(
+        {
+          error: migrationRequired
+            ? "Flexible booking durations need the latest Supabase migration."
+            : result.error.message,
+        },
+        { status: migrationRequired ? 503 : 500 },
+      );
     }
 
     return NextResponse.json({ ok: true }, { status: 201 });
@@ -329,6 +366,7 @@ export async function POST(request: NextRequest) {
       academy_type: invoice.academyType,
       program_slug: invoice.programSlug,
       fee_kind: invoice.feeKind,
+      payment_mode: invoice.paymentMode,
       description: invoice.description || null,
       amount,
       invoice_date: invoice.invoiceDate,
@@ -343,10 +381,25 @@ export async function POST(request: NextRequest) {
         academy_type: invoice.academyType,
         description: invoice.description || null,
         amount,
+        payment_mode: invoice.paymentMode,
         invoice_date: invoice.invoiceDate,
         status: invoice.status,
       });
       if (!fallback.error) return NextResponse.json({ ok: true }, { status: 201 });
+      if (isCompatibilityError(fallback.error)) {
+        const legacy = await supabase.from("invoices").insert({
+          customer_name: invoice.customerName,
+          customer_phone: invoice.phone,
+          customer_email: invoice.email || null,
+          academy_type: invoice.academyType,
+          description: invoice.description || null,
+          amount,
+          invoice_date: invoice.invoiceDate,
+          status: invoice.status,
+        });
+        if (!legacy.error) return NextResponse.json({ ok: true }, { status: 201 });
+        return NextResponse.json({ error: legacy.error.message }, { status: 500 });
+      }
       return NextResponse.json({ error: fallback.error.message }, { status: 500 });
     }
 
@@ -492,6 +545,46 @@ export async function PATCH(request: NextRequest) {
 
     if (result.error) {
       return NextResponse.json({ error: result.error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ ok: true });
+  }
+
+  if (
+    body.resource === "transaction" &&
+    ["cash", "upi"].includes(body.paymentMode)
+  ) {
+    const transaction = await supabase
+      .from("transactions")
+      .select("reference_id,reference_type")
+      .eq("id", body.id)
+      .single();
+    if (transaction.error || !transaction.data) {
+      return NextResponse.json({ error: "Transaction not found." }, { status: 404 });
+    }
+
+    const ledger = await supabase
+      .from("transactions")
+      .update({ payment_mode: body.paymentMode })
+      .eq("id", body.id);
+    if (ledger.error) {
+      const migrationRequired = isCompatibilityError(ledger.error);
+      return NextResponse.json(
+        {
+          error: migrationRequired
+            ? "Payment modes need the latest Supabase migration."
+            : ledger.error.message,
+        },
+        { status: migrationRequired ? 503 : 500 },
+      );
+    }
+
+    const source = await supabase
+      .from(transaction.data.reference_type === "booking" ? "bookings" : "invoices")
+      .update({ payment_mode: body.paymentMode })
+      .eq("id", transaction.data.reference_id);
+    if (source.error && !isCompatibilityError(source.error)) {
+      return NextResponse.json({ error: source.error.message }, { status: 500 });
     }
 
     return NextResponse.json({ ok: true });

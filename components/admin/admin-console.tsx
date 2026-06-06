@@ -3,6 +3,7 @@
 import { FormEvent, useState } from "react";
 import {
   BadgeIndianRupee,
+  Banknote,
   CalendarCheck,
   Clock3,
   Download,
@@ -17,6 +18,7 @@ import {
   Plus,
   RefreshCw,
   Search,
+  Smartphone,
   UserRoundPlus,
   Users,
   X,
@@ -41,7 +43,14 @@ import {
   type AdminInvoice,
   type AdminTransaction,
 } from "@/lib/admin-data";
-import { formatSlotLabel, generateSlotTimes, getIndiaNowParts } from "@/lib/slots";
+import {
+  formatDuration,
+  formatSlotLabel,
+  generateDurations,
+  generateSlotTimes,
+  getIndiaNowParts,
+} from "@/lib/slots";
+import type { PaymentMode } from "@/lib/types";
 import { useAdminData } from "@/components/admin/admin-data-provider";
 
 export type AdminSection =
@@ -81,6 +90,7 @@ export function AdminConsole({ section }: { section: AdminSection }) {
     updateInvoiceStatus,
     createContact,
     updateContact,
+    updateTransactionPaymentMode,
   } = useAdminData();
   const [search, setSearch] = useState("");
   const [showBookingForm, setShowBookingForm] = useState(false);
@@ -165,7 +175,10 @@ export function AdminConsole({ section }: { section: AdminSection }) {
         <Contacts data={data} updateContact={updateContact} />
       )}
       {!loading && section === "transactions" && (
-        <Transactions transactions={data.transactions} />
+        <Transactions
+          transactions={data.transactions}
+          updatePaymentMode={updateTransactionPaymentMode}
+        />
       )}
       {!loading && section === "analytics" && <Analytics data={data} />}
 
@@ -221,6 +234,18 @@ function Dashboard({
   const outstanding = monthTransactions
     .filter((transaction) => transaction.status === "pending")
     .reduce((total, transaction) => total + transaction.amount, 0);
+  const cashCollected = monthTransactions
+    .filter(
+      (transaction) =>
+        transaction.status === "completed" && transaction.paymentMode === "cash",
+    )
+    .reduce((total, transaction) => total + transaction.amount, 0);
+  const upiCollected = monthTransactions
+    .filter(
+      (transaction) =>
+        transaction.status === "completed" && transaction.paymentMode === "upi",
+    )
+    .reduce((total, transaction) => total + transaction.amount, 0);
   const activeMembers = data.contacts.filter(
     (contact) => contact.memberStatus === "active" && contact.clientType !== "turf",
   ).length;
@@ -268,6 +293,14 @@ function Dashboard({
             <MetricMini
               label="Pending invoices"
               value={data.invoices.filter((invoice) => invoice.status === "pending").length}
+            />
+            <MetricMini
+              label="Cash collected"
+              value={`₹${cashCollected.toLocaleString("en-IN")}`}
+            />
+            <MetricMini
+              label="UPI collected"
+              value={`₹${upiCollected.toLocaleString("en-IN")}`}
             />
           </div>
         </Panel>
@@ -366,16 +399,16 @@ function BookingTable({
 
   return (
     <DataTable
-      headers={["Date", "Time", "Customer", "Phone", "Price", "Source", "Status", ""]}
+      headers={["Date", "Time", "Duration", "Customer", "Price", "Payment", "Status", ""]}
     >
       {bookings.map((booking) => (
         <tr key={booking.id} className="border-t border-white/5">
           <Cell>{booking.date}</Cell>
           <Cell>{bookingTimeRange(booking)}</Cell>
+          <Cell>{formatDuration(booking.durationHours)}</Cell>
           <Cell strong>{booking.customerName}</Cell>
-          <Cell>{booking.phone}</Cell>
           <Cell>₹{booking.totalPrice.toLocaleString("en-IN")}</Cell>
-          <Cell>{booking.source}</Cell>
+          <Cell><PaymentModeBadge value={booking.paymentMode} /></Cell>
           <Cell>
             <Status value={booking.status} />
           </Cell>
@@ -409,7 +442,7 @@ function Invoices({
   return (
     <Panel title="All invoices">
       <DataTable
-        headers={["Invoice", "Date", "Customer", "Class / batch", "Amount", "Status", "Actions"]}
+        headers={["Invoice", "Date", "Customer", "Class / batch", "Amount", "Payment", "Status", "Actions"]}
       >
         {invoices.map((invoice) => (
           <tr key={invoice.id} className="border-t border-white/5">
@@ -420,6 +453,7 @@ function Invoices({
               {getAcademyProgram(invoice.programSlug)?.shortName ?? invoice.academyType}
             </Cell>
             <Cell>₹{invoice.amount.toLocaleString("en-IN")}</Cell>
+            <Cell><PaymentModeBadge value={invoice.paymentMode} /></Cell>
             <Cell>
               <Status value={invoice.status} />
             </Cell>
@@ -643,8 +677,10 @@ function Contacts({
 
 function Transactions({
   transactions,
+  updatePaymentMode,
 }: {
   transactions: AdminTransaction[];
+  updatePaymentMode: (id: string, paymentMode: PaymentMode) => Promise<void>;
 }) {
   const total = transactions
     .filter((item) => item.status === "completed")
@@ -655,17 +691,30 @@ function Transactions({
       title="Payment ledger"
       action={<strong className="text-sm text-green-400">Completed: ₹{total.toLocaleString("en-IN")}</strong>}
     >
-      {transactions.length === 0 ? <EmptyState text="No transactions found in Supabase." /> : <DataTable headers={["Date", "Type", "Customer", "Phone", "Amount", "Source", "Status"]}>
+      {transactions.length === 0 ? <EmptyState text="No transactions found in Supabase." /> : <DataTable headers={["Date", "Type", "Customer", "Amount", "Payment", "Source", "Status", ""]}>
         {transactions.map((transaction) => (
           <tr key={transaction.id} className="border-t border-white/5">
             <Cell>{transaction.date}</Cell>
             <Cell>{transaction.type}</Cell>
             <Cell strong>{transaction.customerName}</Cell>
-            <Cell>{transaction.phone}</Cell>
             <Cell>₹{transaction.amount.toLocaleString("en-IN")}</Cell>
+            <Cell><PaymentModeBadge value={transaction.paymentMode} /></Cell>
             <Cell>{transaction.source}</Cell>
             <Cell>
               <Status value={transaction.status} />
+            </Cell>
+            <Cell>
+              <button
+                onClick={() =>
+                  void updatePaymentMode(
+                    transaction.id,
+                    transaction.paymentMode === "cash" ? "upi" : "cash",
+                  )
+                }
+                className="text-xs font-bold text-sky-300 hover:text-sky-200"
+              >
+                Change to {transaction.paymentMode === "cash" ? "UPI" : "Cash"}
+              </button>
             </Cell>
           </tr>
         ))}
@@ -704,6 +753,13 @@ function Analytics({ data }: { data: AdminData }) {
     ).length,
   }));
   const maxMembers = Math.max(...programMembers.map((item) => item.total), 1);
+  const paymentModeTotals = ["cash", "upi"].map((paymentMode) => ({
+    paymentMode,
+    total: transactions
+      .filter((item) => item.paymentMode === paymentMode)
+      .reduce((sum, item) => sum + item.amount, 0),
+  }));
+  const maxPaymentMode = Math.max(...paymentModeTotals.map((item) => item.total), 1);
 
   return (
     <div className="mt-7 grid gap-5 xl:grid-cols-2">
@@ -734,6 +790,16 @@ function Analytics({ data }: { data: AdminData }) {
             label={item.name}
             value={`${item.total} members`}
             width={(item.total / maxMembers) * 100}
+          />
+        ))}
+      </ChartPanel>
+      <ChartPanel title="Cash vs UPI this month">
+        {paymentModeTotals.map((item) => (
+          <Bar
+            key={item.paymentMode}
+            label={item.paymentMode}
+            value={`₹${item.total.toLocaleString("en-IN")}`}
+            width={(item.total / maxPaymentMode) * 100}
           />
         ))}
       </ChartPanel>
@@ -769,6 +835,7 @@ function BookingModal({
     date: today,
     startTime: "09:30",
     durationHours: 1,
+    paymentMode: "cash" as PaymentMode,
     status: "confirmed" as AdminBooking["status"],
   });
 
@@ -790,7 +857,19 @@ function BookingModal({
           </Select>
         </div>
         <Select label="Duration" value={String(form.durationHours)} onChange={(durationHours) => setForm({ ...form, durationHours: Number(durationHours) })}>
-          {[1, 2, 3, 4, 5].map((hours) => <option key={hours} value={hours}>{hours} hour{hours > 1 ? "s" : ""}</option>)}
+          {generateDurations().map((duration) => (
+            <option key={duration} value={duration}>{formatDuration(duration)}</option>
+          ))}
+        </Select>
+        <Select
+          label="Payment mode"
+          value={form.paymentMode}
+          onChange={(paymentMode) =>
+            setForm({ ...form, paymentMode: paymentMode as PaymentMode })
+          }
+        >
+          <option value="cash">Cash</option>
+          <option value="upi">UPI</option>
         </Select>
         <ActionButton type="submit">Save booking</ActionButton>
       </form>
@@ -814,6 +893,7 @@ function InvoiceModal({
     feeKind: "monthly" as InvoiceFeeKind,
     description: invoiceDescriptionForPlan("yoga_morning", "monthly"),
     amount: invoiceAmountForPlan("yoga_morning", "monthly"),
+    paymentMode: "cash" as PaymentMode,
     invoiceDate: getIndiaNowParts().date,
     status: "paid" as AdminInvoice["status"],
   });
@@ -861,6 +941,16 @@ function InvoiceModal({
           <option value="other">Custom fee</option>
         </Select>
         <Field label="Description" value={form.description} onChange={(description) => setForm({ ...form, description })} />
+        <Select
+          label="Payment mode"
+          value={form.paymentMode}
+          onChange={(paymentMode) =>
+            setForm({ ...form, paymentMode: paymentMode as PaymentMode })
+          }
+        >
+          <option value="cash">Cash</option>
+          <option value="upi">UPI</option>
+        </Select>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Amount" type="number" min="1" required value={String(form.amount)} onChange={(amount) => setForm({ ...form, amount: Number(amount) })} />
           <Field label="Invoice date" type="date" required value={form.invoiceDate} onChange={(invoiceDate) => setForm({ ...form, invoiceDate })} />
@@ -1070,7 +1160,7 @@ function ContactHistoryModal({
               <HistoryRow
                 key={item.id}
                 title={`${item.type} · ${item.source}`}
-                meta={item.date}
+                meta={`${item.date} · ${item.paymentMode.toUpperCase()}`}
                 value={`₹${item.amount.toLocaleString("en-IN")}`}
                 status={item.status}
               />
@@ -1081,7 +1171,7 @@ function ContactHistoryModal({
               <HistoryRow
                 key={item.id}
                 title={`${item.invoiceNumber} · ${getAcademyProgram(item.programSlug)?.shortName ?? item.academyType}`}
-                meta={item.invoiceDate}
+                meta={`${item.invoiceDate} · ${item.paymentMode.toUpperCase()}`}
                 value={`₹${item.amount.toLocaleString("en-IN")}`}
                 status={item.status}
               />
@@ -1092,7 +1182,7 @@ function ContactHistoryModal({
               <HistoryRow
                 key={item.id}
                 title={bookingTimeRange(item)}
-                meta={item.date}
+                meta={`${item.date} · ${item.paymentMode.toUpperCase()}`}
                 value={`₹${item.totalPrice.toLocaleString("en-IN")}`}
                 status={item.status}
               />
@@ -1205,6 +1295,15 @@ function Status({ value }: { value: string }) {
   return <span className={`rounded-full px-2.5 py-1 text-xs font-bold capitalize ${tone}`}>{value}</span>;
 }
 
+function PaymentModeBadge({ value }: { value: PaymentMode }) {
+  const Icon = value === "upi" ? Smartphone : Banknote;
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-sky-400/10 px-2.5 py-1 text-xs font-bold uppercase text-sky-200">
+      <Icon size={12} /> {value}
+    </span>
+  );
+}
+
 function ActionButton({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
   return <button {...props} className="flex items-center justify-center gap-2 rounded-xl bg-green-500 px-4 py-2.5 text-sm font-black text-slate-950 transition hover:bg-green-400">{children}</button>;
 }
@@ -1247,7 +1346,19 @@ function EmptyState({ text }: { text: string }) {
 }
 
 function exportTransactions(transactions: AdminTransaction[]) {
-  const rows = [["Date", "Type", "Customer", "Phone", "Amount", "Source", "Status"], ...transactions.map((item) => [item.date, item.type, item.customerName, item.phone, String(item.amount), item.source, item.status])];
+  const rows = [
+    ["Date", "Type", "Customer", "Phone", "Amount", "Payment mode", "Source", "Status"],
+    ...transactions.map((item) => [
+      item.date,
+      item.type,
+      item.customerName,
+      item.phone,
+      String(item.amount),
+      item.paymentMode,
+      item.source,
+      item.status,
+    ]),
+  ];
   downloadCsv("iplay-transactions.csv", rows);
 }
 

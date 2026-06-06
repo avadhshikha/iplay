@@ -4,7 +4,8 @@ import type { SlotAvailability } from "@/lib/types";
 export const OPERATING_TIME_ZONE = "Asia/Kolkata";
 export const OPENING_TIME = "09:30";
 export const CLOSING_TIME = "23:30";
-export const SLOT_COUNT = 14;
+export const SLOT_INTERVAL_MINUTES = 30;
+export const SLOT_COUNT = 28;
 export const MAX_BOOKING_HOURS = 5;
 
 export function timeToMinutes(time: string) {
@@ -30,7 +31,7 @@ export function formatSlotLabel(time: string) {
 export function generateSlotTimes() {
   const openingMinutes = timeToMinutes(OPENING_TIME);
   return Array.from({ length: SLOT_COUNT }, (_, index) =>
-    minutesToTime(openingMinutes + index * 60),
+    minutesToTime(openingMinutes + index * SLOT_INTERVAL_MINUTES),
   );
 }
 
@@ -41,12 +42,24 @@ export function getEndTime(startTime: string, durationHours: number) {
 export function isValidBookingWindow(startTime: string, durationHours: number) {
   return (
     generateSlotTimes().includes(startTime.slice(0, 5)) &&
-    Number.isInteger(durationHours) &&
-    durationHours >= 1 &&
+    Number.isInteger(durationHours * 2) &&
+    durationHours >= 0.5 &&
     durationHours <= MAX_BOOKING_HOURS &&
     timeToMinutes(getEndTime(startTime, durationHours)) <=
       timeToMinutes(CLOSING_TIME)
   );
+}
+
+export function formatDuration(durationHours: number) {
+  const hours = Math.floor(durationHours);
+  const minutes = Math.round((durationHours - hours) * 60);
+  if (!hours) return `${minutes} min`;
+  if (!minutes) return `${hours} hr${hours === 1 ? "" : "s"}`;
+  return `${hours} hr ${minutes} min`;
+}
+
+export function generateDurations() {
+  return Array.from({ length: MAX_BOOKING_HOURS * 2 }, (_, index) => (index + 1) / 2);
 }
 
 export function rangesOverlap(

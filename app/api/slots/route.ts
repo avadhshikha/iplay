@@ -5,6 +5,7 @@ import {
   createDemoSlots,
   formatSlotLabel,
   generateSlotTimes,
+  getEndTime,
   isSlotInPast,
   rangesOverlap,
 } from "@/lib/slots";
@@ -55,7 +56,7 @@ export async function GET(request: NextRequest) {
 
   const price = getHourlyRate(date);
   const slots: SlotAvailability[] = generateSlotTimes().map((time) => {
-    const endTime = `${String(Number(time.slice(0, 2)) + 1).padStart(2, "0")}:${time.slice(3, 5)}`;
+    const endTime = getEndTime(time, 0.5);
     const booked = bookingsResult.data.some((booking) =>
       rangesOverlap(time, endTime, booking.start_time, booking.end_time),
     );

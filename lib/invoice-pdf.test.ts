@@ -16,6 +16,7 @@ describe("invoice PDF", () => {
       feeKind: "monthly",
       description: "Monthly yoga coaching fee",
       amount: 2500,
+      paymentMode: "upi",
       invoiceDate: "2026-06-07",
       status: "paid",
     };

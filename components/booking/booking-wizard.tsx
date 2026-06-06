@@ -1,20 +1,40 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { Check, IndianRupee, LoaderCircle } from "lucide-react";
+import {
+  Banknote,
+  Check,
+  Clock3,
+  IndianRupee,
+  LoaderCircle,
+  Smartphone,
+} from "lucide-react";
 
 import { calculateBookingPrice } from "@/lib/pricing";
-import { getIndiaNowParts } from "@/lib/slots";
-import type { SlotAvailability } from "@/lib/types";
+import {
+  formatDuration,
+  formatSlotLabel,
+  generateDurations,
+  getEndTime,
+  getIndiaNowParts,
+} from "@/lib/slots";
+import type { PaymentMode, SlotAvailability } from "@/lib/types";
 
 type FormState = {
   name: string;
   phone: string;
   email: string;
   notes: string;
+  paymentMode: PaymentMode;
 };
 
-const initialForm: FormState = { name: "", phone: "", email: "", notes: "" };
+const initialForm: FormState = {
+  name: "",
+  phone: "",
+  email: "",
+  notes: "",
+  paymentMode: "upi",
+};
 
 export function BookingWizard() {
   const today = useMemo(() => getIndiaNowParts().date, []);
@@ -47,23 +67,31 @@ export function BookingWizard() {
     };
   }, [date]);
 
-  function selectSlot(time: string) {
+  function selectStartTime(time: string) {
     const index = slots.findIndex((slot) => slot.time === time);
-    const lastIndex = slots.findIndex(
-      (slot) => slot.time === selected[selected.length - 1],
+    const nextSlot = slots[index + 1];
+    setSelected(
+      nextSlot?.available ? [time, nextSlot.time] : [time],
     );
+  }
 
-    if (
-      selected.length > 0 &&
-      index === lastIndex + 1 &&
-      selected.length < 5 &&
-      slots[index].available
-    ) {
-      setSelected([...selected, time]);
-      return;
-    }
+  function durationAvailable(durationHours: number) {
+    const startIndex = slots.findIndex((slot) => slot.time === selected[0]);
+    const slotCount = durationHours * 2;
+    return (
+      startIndex >= 0 &&
+      startIndex + slotCount <= slots.length &&
+      slots.slice(startIndex, startIndex + slotCount).every((slot) => slot.available)
+    );
+  }
 
-    setSelected([time]);
+  function chooseDuration(durationHours: number) {
+    const startIndex = slots.findIndex((slot) => slot.time === selected[0]);
+    setSelected(
+      slots
+        .slice(startIndex, startIndex + durationHours * 2)
+        .map((slot) => slot.time),
+    );
   }
 
   async function submitBooking(event: FormEvent<HTMLFormElement>) {
@@ -80,7 +108,8 @@ export function BookingWizard() {
         customer_email: form.email,
         booking_date: date,
         start_time: selected[0],
-        duration_hours: selected.length,
+        duration_hours: selected.length / 2,
+        payment_mode: form.paymentMode,
         notes: form.notes,
       }),
     });
@@ -96,8 +125,9 @@ export function BookingWizard() {
     setSubmitting(false);
   }
 
+  const durationHours = selected.length / 2;
   const total = selected.length
-    ? calculateBookingPrice(date, selected.length)
+    ? calculateBookingPrice(date, durationHours)
     : 0;
 
   if (success) {
@@ -110,8 +140,9 @@ export function BookingWizard() {
           Booking confirmed
         </h2>
         <p className="mt-3 leading-7 text-slate-600">
-          Your turf is reserved for {date} at {selected[0]} for{" "}
-          {selected.length} hour{selected.length === 1 ? "" : "s"}.
+          Your turf is reserved for {date}, {formatSlotLabel(selected[0])} to{" "}
+          {formatSlotLabel(getEndTime(selected[0], durationHours))}. Payment mode:{" "}
+          {form.paymentMode.toUpperCase()}.
         </p>
         <button
           onClick={() => {
@@ -168,7 +199,7 @@ export function BookingWizard() {
       <div className="mt-6">
         <div className="flex items-center justify-between">
           <p className="text-sm font-bold text-slate-700">Available slots</p>
-          <p className="text-xs text-slate-500">Tap consecutive slots, up to 5</p>
+          <p className="text-xs text-slate-500">30-minute start-time choices</p>
         </div>
         {loadingSlots ? (
           <div className="grid min-h-40 place-items-center text-green-700">
@@ -178,15 +209,18 @@ export function BookingWizard() {
           <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
             {slots.map((slot) => {
               const active = selected.includes(slot.time);
+              const isStart = selected[0] === slot.time;
               return (
                 <button
                   type="button"
                   key={slot.time}
                   disabled={!slot.available}
-                  onClick={() => selectSlot(slot.time)}
+                  onClick={() => selectStartTime(slot.time)}
                   className={`rounded-xl border px-3 py-3 text-sm font-bold transition ${
                     active
-                      ? "border-green-700 bg-green-700 text-white shadow-md"
+                      ? isStart
+                        ? "border-green-800 bg-green-700 text-white shadow-md ring-2 ring-green-200"
+                        : "border-green-600 bg-green-100 text-green-950"
                       : slot.available
                         ? "border-green-100 bg-green-50 text-green-900 hover:border-green-400"
                         : "cursor-not-allowed border-slate-100 bg-slate-100 text-slate-400"
@@ -199,6 +233,54 @@ export function BookingWizard() {
           </div>
         )}
       </div>
+
+      {selected.length > 0 && (
+        <div className="mt-6 rounded-2xl border border-green-200 bg-green-50/70 p-4">
+          <p className="text-xs font-black uppercase tracking-[0.16em] text-green-700">
+            How long would you like to play?
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {generateDurations().map((duration) => {
+              const available = durationAvailable(duration);
+              const active = durationHours === duration;
+              return (
+                <button
+                  type="button"
+                  key={duration}
+                  disabled={!available}
+                  onClick={() => chooseDuration(duration)}
+                  className={`rounded-full border px-3 py-2 text-xs font-black transition ${
+                    active
+                      ? "border-green-700 bg-green-700 text-white"
+                      : available
+                        ? "border-green-200 bg-white text-green-900 hover:border-green-500"
+                        : "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
+                  }`}
+                >
+                  {formatDuration(duration)}
+                </button>
+              );
+            })}
+          </div>
+          <div className="mt-4 grid gap-3 rounded-xl bg-white p-4 text-sm shadow-sm sm:grid-cols-3">
+            <SummaryItem
+              label="Start"
+              value={formatSlotLabel(selected[0])}
+              icon={Clock3}
+            />
+            <SummaryItem
+              label="Ends"
+              value={formatSlotLabel(getEndTime(selected[0], durationHours))}
+              icon={Clock3}
+            />
+            <SummaryItem
+              label="Duration"
+              value={formatDuration(durationHours)}
+              icon={Clock3}
+            />
+          </div>
+        </div>
+      )}
 
       <form onSubmit={submitBooking} className="mt-7 grid gap-4">
         <div className="grid gap-4 sm:grid-cols-2">
@@ -224,6 +306,23 @@ export function BookingWizard() {
           value={form.email}
           onChange={(email) => setForm({ ...form, email })}
         />
+        <div>
+          <p className="text-sm font-bold text-slate-700">Payment mode</p>
+          <div className="mt-2 grid grid-cols-2 gap-3">
+            <PaymentChoice
+              active={form.paymentMode === "upi"}
+              icon={Smartphone}
+              label="UPI"
+              onClick={() => setForm({ ...form, paymentMode: "upi" })}
+            />
+            <PaymentChoice
+              active={form.paymentMode === "cash"}
+              icon={Banknote}
+              label="Cash"
+              onClick={() => setForm({ ...form, paymentMode: "cash" })}
+            />
+          </div>
+        </div>
         <label className="text-sm font-bold text-slate-700">
           Notes (optional)
           <textarea
@@ -247,6 +346,58 @@ export function BookingWizard() {
         </button>
       </form>
     </section>
+  );
+}
+
+function SummaryItem({
+  label,
+  value,
+  icon: Icon,
+}: {
+  label: string;
+  value: string;
+  icon: typeof Clock3;
+}) {
+  return (
+    <div className="flex items-center gap-3">
+      <span className="grid size-9 place-items-center rounded-lg bg-green-100 text-green-700">
+        <Icon size={16} />
+      </span>
+      <span>
+        <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">
+          {label}
+        </span>
+        <strong className="block text-green-950">{value}</strong>
+      </span>
+    </div>
+  );
+}
+
+function PaymentChoice({
+  active,
+  icon: Icon,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  icon: typeof Banknote;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
+      className={`flex items-center gap-3 rounded-xl border p-3 text-left transition ${
+        active
+          ? "border-green-700 bg-green-50 text-green-950 ring-2 ring-green-100"
+          : "border-slate-200 bg-white text-slate-600 hover:border-green-300"
+      }`}
+    >
+      <Icon size={18} className={active ? "text-green-700" : "text-slate-400"} />
+      <strong className="text-sm">{label}</strong>
+    </button>
   );
 }
 

@@ -78,7 +78,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const result = await supabase
+  let result = await supabase
     .from("bookings")
     .insert({
       ...booking,
@@ -90,6 +90,7 @@ export async function POST(request: NextRequest) {
         booking.booking_date,
         booking.duration_hours,
       ),
+      payment_mode: booking.payment_mode,
       day_type: isWeekend(booking.booking_date) ? "weekend" : "weekday",
       status: "confirmed",
       source: "online",
@@ -97,15 +98,42 @@ export async function POST(request: NextRequest) {
     .select()
     .single();
 
+  if (result.error?.message.includes("payment_mode")) {
+    const { payment_mode: _paymentMode, ...legacyBooking } = booking;
+    void _paymentMode;
+    result = await supabase
+      .from("bookings")
+      .insert({
+        ...legacyBooking,
+        customer_email: booking.customer_email || null,
+        notes: booking.notes || null,
+        end_time: endTime,
+        price_per_hour: pricePerHour,
+        total_price: calculateBookingPrice(booking.booking_date, booking.duration_hours),
+        day_type: isWeekend(booking.booking_date) ? "weekend" : "weekday",
+        status: "confirmed",
+        source: "online",
+      })
+      .select()
+      .single();
+  }
+
   if (result.error) {
     const conflict = result.error.code === "23P01";
+    const migrationRequired =
+      !Number.isInteger(booking.duration_hours) &&
+      (result.error.message.includes("duration_hours") ||
+        result.error.message.includes("smallint") ||
+        result.error.message.includes("invalid input syntax"));
     return NextResponse.json(
       {
-        error: conflict
-          ? "Another booking already uses one or more of those slots."
-          : "Could not save the booking.",
+        error: migrationRequired
+          ? "Flexible booking durations need the latest Supabase migration."
+          : conflict
+            ? "Another booking already uses one or more of those slots."
+            : "Could not save the booking.",
       },
-      { status: conflict ? 409 : 500 },
+      { status: conflict ? 409 : migrationRequired ? 503 : 500 },
     );
   }
 
