@@ -5,6 +5,8 @@ import {
   Activity,
   CalendarCheck,
   Download,
+  Eye,
+  FileDown,
   IndianRupee,
   LoaderCircle,
   Plus,
@@ -299,7 +301,7 @@ function Invoices({
   return (
     <Panel title="All invoices">
       <DataTable
-        headers={["Invoice", "Date", "Customer", "Academy", "Amount", "Status", "Action"]}
+        headers={["Invoice", "Date", "Customer", "Academy", "Amount", "Status", "Actions"]}
       >
         {invoices.map((invoice) => (
           <tr key={invoice.id} className="border-t border-white/5">
@@ -312,10 +314,26 @@ function Invoices({
               <Status value={invoice.status} />
             </Cell>
             <Cell>
+              <div className="flex items-center gap-3">
+                <a
+                  href={`/api/admin/invoices/${invoice.id}/pdf?preview=1`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center gap-1 text-xs font-bold text-sky-300 hover:text-sky-200"
+                >
+                  <Eye size={14} /> Preview
+                </a>
+                <a
+                  href={`/api/admin/invoices/${invoice.id}/pdf`}
+                  className="flex items-center gap-1 text-xs font-bold text-green-400 hover:text-green-300"
+                >
+                  <FileDown size={14} /> PDF
+                </a>
+              </div>
               {invoice.status === "pending" && (
                 <button
                   onClick={() => setStatus(invoice.id, "paid")}
-                  className="text-xs font-bold text-green-400"
+                  className="mt-2 text-xs font-bold text-amber-300"
                 >
                   Mark paid
                 </button>

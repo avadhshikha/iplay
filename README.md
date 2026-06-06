@@ -20,6 +20,9 @@ live Supabase connection and never displays sample operational records.
 - `npm test` runs pricing and slot-logic tests.
 - `npm run build` verifies the production build.
 
+Invoice records include Preview and PDF actions. PDF downloads are generated
+from live Supabase invoice data as polished A4 documents suitable for sharing.
+
 ## Security
 
 - The Supabase service-role key is server-only.
