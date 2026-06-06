@@ -1,12 +1,14 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useState } from "react";
 import {
   Activity,
   CalendarCheck,
   Download,
   IndianRupee,
+  LoaderCircle,
   Plus,
+  RefreshCw,
   Search,
   Users,
   X,
@@ -14,14 +16,12 @@ import {
 
 import {
   bookingTimeRange,
-  buildInvoice,
-  buildManualBooking,
-  getDemoContacts,
-  getDemoTransactions,
-  type DemoAdminData,
-  type DemoBooking,
-  type DemoInvoice,
-} from "@/lib/demo-admin";
+  type AdminBooking,
+  type AdminContact,
+  type AdminData,
+  type AdminInvoice,
+  type AdminTransaction,
+} from "@/lib/admin-data";
 import { formatSlotLabel, generateSlotTimes, getIndiaNowParts } from "@/lib/slots";
 import { useAdminData } from "@/components/admin/admin-data-provider";
 
@@ -46,12 +46,19 @@ const control =
   "rounded-xl border border-white/10 bg-slate-900 px-3 py-2.5 text-sm text-slate-100 outline-none placeholder:text-slate-500 focus:border-green-400";
 
 export function AdminConsole({ section }: { section: AdminSection }) {
-  const { data, setData } = useAdminData();
+  const {
+    data,
+    loading,
+    error,
+    refresh,
+    createBooking,
+    cancelBooking,
+    createInvoice,
+    updateInvoiceStatus,
+  } = useAdminData();
   const [search, setSearch] = useState("");
   const [showBookingForm, setShowBookingForm] = useState(false);
   const [showInvoiceForm, setShowInvoiceForm] = useState(false);
-  const contacts = useMemo(() => getDemoContacts(data), [data]);
-  const transactions = useMemo(() => getDemoTransactions(data), [data]);
   const [title, subtitle] = titles[section];
 
   return (
@@ -59,7 +66,7 @@ export function AdminConsole({ section }: { section: AdminSection }) {
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.16em] text-green-400">
-            Local demo workspace
+            Live Supabase workspace
           </p>
           <h1 className="mt-2 text-4xl font-black tracking-tight">{title}</h1>
           <p className="mt-2 text-sm text-slate-400">{subtitle}</p>
@@ -75,59 +82,64 @@ export function AdminConsole({ section }: { section: AdminSection }) {
           </ActionButton>
         )}
         {section === "transactions" && (
-          <ActionButton onClick={() => exportTransactions(transactions)}>
+          <ActionButton onClick={() => exportTransactions(data.transactions)}>
             <Download size={16} /> Export CSV
           </ActionButton>
         )}
+        <button
+          onClick={() => void refresh()}
+          aria-label="Refresh Supabase data"
+          className="flex items-center gap-2 rounded-xl border border-white/10 px-4 py-2.5 text-sm font-bold text-slate-300 hover:bg-white/5"
+        >
+          <RefreshCw size={15} /> Refresh
+        </button>
       </div>
 
-      <p className="mt-6 rounded-xl border border-amber-400/20 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">
-        Demo mode: changes work during this session. Connect Supabase to persist them.
-      </p>
-
-      {section === "dashboard" && (
-        <Dashboard data={data} contactsCount={contacts.length} />
+      {error && (
+        <p className="mt-6 rounded-xl border border-rose-400/20 bg-rose-400/10 px-4 py-3 text-sm text-rose-100">
+          {error}
+        </p>
       )}
-      {section === "bookings" && (
+      {!error && (
+        <p className="mt-6 rounded-xl border border-green-400/20 bg-green-400/10 px-4 py-3 text-sm text-green-100">
+          Connected to Supabase. Changes made here are saved to the live database.
+        </p>
+      )}
+
+      {loading && (
+        <div className="mt-10 flex items-center gap-3 text-slate-400">
+          <LoaderCircle className="animate-spin" size={18} /> Loading Supabase data…
+        </div>
+      )}
+
+      {!loading && section === "dashboard" && (
+        <Dashboard data={data} contactsCount={data.contacts.length} />
+      )}
+      {!loading && section === "bookings" && (
         <Bookings
           bookings={data.bookings}
           search={search}
           setSearch={setSearch}
-          cancelBooking={(id) =>
-            setData((current) => ({
-              ...current,
-              bookings: current.bookings.map((booking) =>
-                booking.id === id ? { ...booking, status: "cancelled" } : booking,
-              ),
-            }))
-          }
+          cancelBooking={cancelBooking}
         />
       )}
-      {section === "invoices" && (
+      {!loading && section === "invoices" && (
         <Invoices
           invoices={data.invoices}
-          setStatus={(id, status) =>
-            setData((current) => ({
-              ...current,
-              invoices: current.invoices.map((invoice) =>
-                invoice.id === id ? { ...invoice, status } : invoice,
-              ),
-            }))
-          }
+          setStatus={updateInvoiceStatus}
         />
       )}
-      {section === "contacts" && <Contacts contacts={contacts} />}
-      {section === "transactions" && <Transactions transactions={transactions} />}
-      {section === "analytics" && <Analytics data={data} />}
+      {!loading && section === "contacts" && <Contacts contacts={data.contacts} />}
+      {!loading && section === "transactions" && (
+        <Transactions transactions={data.transactions} />
+      )}
+      {!loading && section === "analytics" && <Analytics data={data} />}
 
       {showBookingForm && (
         <BookingModal
           onClose={() => setShowBookingForm(false)}
-          onSave={(booking) => {
-            setData((current) => ({
-              ...current,
-              bookings: [buildManualBooking(booking), ...current.bookings],
-            }));
+          onSave={async (booking) => {
+            await createBooking(booking);
             setShowBookingForm(false);
           }}
         />
@@ -135,14 +147,8 @@ export function AdminConsole({ section }: { section: AdminSection }) {
       {showInvoiceForm && (
         <InvoiceModal
           onClose={() => setShowInvoiceForm(false)}
-          onSave={(invoice) => {
-            setData((current) => ({
-              ...current,
-              invoices: [
-                buildInvoice(invoice, current.invoices.length),
-                ...current.invoices,
-              ],
-            }));
+          onSave={async (invoice) => {
+            await createInvoice(invoice);
             setShowInvoiceForm(false);
           }}
         />
@@ -155,14 +161,14 @@ function Dashboard({
   data,
   contactsCount,
 }: {
-  data: DemoAdminData;
+  data: AdminData;
   contactsCount: number;
 }) {
   const today = getIndiaNowParts().date;
   const todayBookings = data.bookings.filter(
     (booking) => booking.date === today && booking.status !== "cancelled",
   );
-  const completedRevenue = getDemoTransactions(data)
+  const completedRevenue = data.transactions
     .filter((transaction) => transaction.status === "completed")
     .reduce((total, transaction) => total + transaction.amount, 0);
   const todayRevenue = todayBookings
@@ -205,10 +211,10 @@ function Bookings({
   setSearch,
   cancelBooking,
 }: {
-  bookings: DemoBooking[];
+  bookings: AdminBooking[];
   search: string;
   setSearch: (value: string) => void;
-  cancelBooking: (id: string) => void;
+  cancelBooking: (id: string) => Promise<void>;
 }) {
   const query = search.toLowerCase();
   const filtered = bookings.filter(
@@ -241,9 +247,13 @@ function BookingTable({
   bookings,
   onCancel,
 }: {
-  bookings: DemoBooking[];
+  bookings: AdminBooking[];
   onCancel?: (id: string) => void;
 }) {
+  if (bookings.length === 0) {
+    return <EmptyState text="No bookings found in Supabase." />;
+  }
+
   return (
     <DataTable
       headers={["Date", "Time", "Customer", "Phone", "Price", "Source", "Status", ""]}
@@ -279,9 +289,13 @@ function Invoices({
   invoices,
   setStatus,
 }: {
-  invoices: DemoInvoice[];
-  setStatus: (id: string, status: DemoInvoice["status"]) => void;
+  invoices: AdminInvoice[];
+  setStatus: (id: string, status: AdminInvoice["status"]) => Promise<void>;
 }) {
+  if (invoices.length === 0) {
+    return <Panel title="All invoices"><EmptyState text="No invoices found in Supabase." /></Panel>;
+  }
+
   return (
     <Panel title="All invoices">
       <DataTable
@@ -314,7 +328,11 @@ function Invoices({
   );
 }
 
-function Contacts({ contacts }: { contacts: ReturnType<typeof getDemoContacts> }) {
+function Contacts({ contacts }: { contacts: AdminContact[] }) {
+  if (contacts.length === 0) {
+    return <Panel title="Auto-created contacts"><EmptyState text="No contacts found in Supabase yet." /></Panel>;
+  }
+
   return (
     <Panel title="Auto-created contacts">
       <DataTable
@@ -339,7 +357,7 @@ function Contacts({ contacts }: { contacts: ReturnType<typeof getDemoContacts> }
 function Transactions({
   transactions,
 }: {
-  transactions: ReturnType<typeof getDemoTransactions>;
+  transactions: AdminTransaction[];
 }) {
   const total = transactions
     .filter((item) => item.status === "completed")
@@ -350,7 +368,7 @@ function Transactions({
       title="Payment ledger"
       action={<strong className="text-sm text-green-400">Completed: ₹{total.toLocaleString("en-IN")}</strong>}
     >
-      <DataTable headers={["Date", "Type", "Customer", "Phone", "Amount", "Source", "Status"]}>
+      {transactions.length === 0 ? <EmptyState text="No transactions found in Supabase." /> : <DataTable headers={["Date", "Type", "Customer", "Phone", "Amount", "Source", "Status"]}>
         {transactions.map((transaction) => (
           <tr key={transaction.id} className="border-t border-white/5">
             <Cell>{transaction.date}</Cell>
@@ -364,13 +382,13 @@ function Transactions({
             </Cell>
           </tr>
         ))}
-      </DataTable>
+      </DataTable>}
     </Panel>
   );
 }
 
-function Analytics({ data }: { data: DemoAdminData }) {
-  const transactions = getDemoTransactions(data).filter((item) => item.status === "completed");
+function Analytics({ data }: { data: AdminData }) {
+  const transactions = data.transactions.filter((item) => item.status === "completed");
   const categoryTotals = ["turf", "yoga", "chess", "cricket"].map((type) => ({
     type,
     total: transactions
@@ -419,7 +437,7 @@ function BookingModal({
   onSave,
 }: {
   onClose: () => void;
-  onSave: (booking: Omit<DemoBooking, "id" | "totalPrice" | "source">) => void;
+  onSave: (booking: Omit<AdminBooking, "id" | "totalPrice" | "source">) => Promise<void>;
 }) {
   const today = getIndiaNowParts().date;
   const [form, setForm] = useState({
@@ -429,12 +447,12 @@ function BookingModal({
     date: today,
     startTime: "09:30",
     durationHours: 1,
-    status: "confirmed" as DemoBooking["status"],
+    status: "confirmed" as AdminBooking["status"],
   });
 
-  function submit(event: FormEvent) {
+  async function submit(event: FormEvent) {
     event.preventDefault();
-    onSave(form);
+    await onSave(form);
   }
 
   return (
@@ -463,26 +481,26 @@ function InvoiceModal({
   onSave,
 }: {
   onClose: () => void;
-  onSave: (invoice: Omit<DemoInvoice, "id" | "invoiceNumber">) => void;
+  onSave: (invoice: Omit<AdminInvoice, "id" | "invoiceNumber">) => Promise<void>;
 }) {
   const [form, setForm] = useState({
     customerName: "",
     phone: "",
     email: "",
-    academyType: "yoga" as DemoInvoice["academyType"],
+    academyType: "yoga" as AdminInvoice["academyType"],
     description: "",
     amount: 2500,
     invoiceDate: getIndiaNowParts().date,
-    status: "paid" as DemoInvoice["status"],
+    status: "paid" as AdminInvoice["status"],
   });
 
   return (
     <Modal title="Create invoice" onClose={onClose}>
-      <form onSubmit={(event) => { event.preventDefault(); onSave(form); }} className="grid gap-4">
+      <form onSubmit={async (event) => { event.preventDefault(); await onSave(form); }} className="grid gap-4">
         <Field label="Customer name" required value={form.customerName} onChange={(customerName) => setForm({ ...form, customerName })} />
         <Field label="Phone" required pattern="[6-9][0-9]{9}" value={form.phone} onChange={(phone) => setForm({ ...form, phone })} />
         <Field label="Email" type="email" value={form.email} onChange={(email) => setForm({ ...form, email })} />
-        <Select label="Academy" value={form.academyType} onChange={(academyType) => setForm({ ...form, academyType: academyType as DemoInvoice["academyType"] })}>
+        <Select label="Academy" value={form.academyType} onChange={(academyType) => setForm({ ...form, academyType: academyType as AdminInvoice["academyType"] })}>
           <option value="yoga">Yoga by Shikha</option>
           <option value="chess">Chess Academy</option>
           <option value="cricket">Cricket Academy</option>
@@ -557,7 +575,11 @@ function Select({ label, value, onChange, children }: { label: string; value: st
   return <label className="grid gap-2 text-sm font-bold text-slate-300">{label}<select value={value} onChange={(event) => onChange(event.target.value)} className={control}>{children}</select></label>;
 }
 
-function exportTransactions(transactions: ReturnType<typeof getDemoTransactions>) {
+function EmptyState({ text }: { text: string }) {
+  return <p className="px-5 py-10 text-center text-sm text-slate-400">{text}</p>;
+}
+
+function exportTransactions(transactions: AdminTransaction[]) {
   const rows = [["Date", "Type", "Customer", "Phone", "Amount", "Source", "Status"], ...transactions.map((item) => [item.date, item.type, item.customerName, item.phone, String(item.amount), item.source, item.status])];
   const blob = new Blob([rows.map((row) => row.join(",")).join("\n")], { type: "text/csv" });
   const url = URL.createObjectURL(blob);

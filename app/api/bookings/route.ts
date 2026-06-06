@@ -5,6 +5,7 @@ import {
   getEndTime,
   isSlotInPast,
   isValidBookingWindow,
+  rangesOverlap,
 } from "@/lib/slots";
 import {
   createSupabaseAdminClient,
@@ -44,6 +45,39 @@ export async function POST(request: NextRequest) {
   const endTime = getEndTime(booking.start_time, booking.duration_hours);
   const pricePerHour = calculateBookingPrice(booking.booking_date, 1);
   const supabase = createSupabaseAdminClient();
+  const [bookings, blocks] = await Promise.all([
+    supabase
+      .from("bookings")
+      .select("start_time,end_time")
+      .eq("booking_date", booking.booking_date)
+      .eq("status", "confirmed"),
+    supabase
+      .from("slots_config")
+      .select("blocked_start,blocked_end")
+      .eq("blocked_date", booking.booking_date),
+  ]);
+
+  if (bookings.error || blocks.error) {
+    return NextResponse.json({ error: "Could not verify availability." }, { status: 500 });
+  }
+
+  const hasConflict = bookings.data.some((row) =>
+    rangesOverlap(booking.start_time, endTime, row.start_time, row.end_time),
+  );
+  const isBlocked = blocks.data.some(
+    (row) =>
+      !row.blocked_start ||
+      !row.blocked_end ||
+      rangesOverlap(booking.start_time, endTime, row.blocked_start, row.blocked_end),
+  );
+
+  if (hasConflict || isBlocked) {
+    return NextResponse.json(
+      { error: "Another booking or block already uses one or more of those slots." },
+      { status: 409 },
+    );
+  }
+
   const result = await supabase
     .from("bookings")
     .insert({

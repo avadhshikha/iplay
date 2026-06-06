@@ -10,9 +10,8 @@ Next.js application for public turf bookings and private operations management.
 4. Run `npm install`, then `npm run dev`.
 
 Without Supabase environment variables, the public page runs in availability
-demo mode and booking submissions remain disabled. The admin panel remains
-fully interactive with session-based demo data so its workflows can be tested
-before Supabase is connected.
+demo mode and booking submissions remain disabled. The admin panel requires a
+live Supabase connection and never displays sample operational records.
 
 ## Commands
 
@@ -26,5 +25,5 @@ before Supabase is connected.
 - The Supabase service-role key is server-only.
 - Row-level security is enabled with no direct client data policies.
 - Confirmed booking overlaps are rejected by a PostgreSQL exclusion constraint.
-- Admin customer and revenue views will be implemented only after Supabase Auth
-  is connected.
+- Live admin customer and revenue APIs are restricted to localhost until
+  Supabase Auth is connected.
