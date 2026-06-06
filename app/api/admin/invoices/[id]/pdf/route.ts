@@ -45,6 +45,8 @@ export async function GET(
     phone: row.customer_phone,
     email: row.customer_email ?? "",
     academyType: row.academy_type,
+    programSlug: row.program_slug ?? "",
+    feeKind: row.fee_kind ?? "monthly",
     description: row.description ?? "",
     amount: row.amount,
     invoiceDate: row.invoice_date,

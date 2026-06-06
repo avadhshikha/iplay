@@ -8,6 +8,12 @@ import type {
   AdminInvoice,
   AdminTransaction,
 } from "@/lib/admin-data";
+import {
+  academyPrograms,
+  getAcademyProgram,
+  invoiceAmountForPlan,
+} from "@/lib/academy-programs";
+import { decodeContactNotes, encodeContactNotes } from "@/lib/contact-metadata";
 import { calculateBookingPrice, isWeekend } from "@/lib/pricing";
 import { getEndTime, isValidBookingWindow, rangesOverlap } from "@/lib/slots";
 import {
@@ -27,11 +33,83 @@ const invoiceSchema = z.object({
   phone: z.string().regex(/^[6-9]\d{9}$/),
   email: z.string().email().optional().or(z.literal("")),
   academyType: z.enum(["yoga", "chess", "cricket"]),
+  programSlug: z.enum([
+    "yoga_morning",
+    "yoga_women_evening",
+    "chess_evening",
+    "cricket_evening",
+  ]),
+  feeKind: z.enum(["monthly", "new_registration", "other"]),
   description: z.string().trim().max(300),
   amount: z.number().int().positive(),
   invoiceDate: dateOnlySchema,
   status: z.enum(["paid", "pending"]),
+}).superRefine((invoice, context) => {
+  const program = getAcademyProgram(invoice.programSlug);
+  if (!program || program.category !== invoice.academyType) {
+    context.addIssue({
+      code: "custom",
+      path: ["programSlug"],
+      message: "The selected batch does not match the academy.",
+    });
+  }
+  if (invoice.feeKind === "new_registration" && !program?.registrationFee) {
+    context.addIssue({
+      code: "custom",
+      path: ["feeKind"],
+      message: "Registration fees are only configured for Cricket Academy.",
+    });
+  }
 });
+
+const contactSchema = z
+  .object({
+    id: z.string().uuid().optional(),
+    name: z.string().trim().min(2).max(100),
+    phone: z.string().regex(/^[6-9]\d{9}$/),
+    email: z.string().email().optional().or(z.literal("")),
+    clientType: z.enum(["turf", "yoga", "chess", "cricket"]),
+    programSlug: z
+      .enum([
+        "yoga_morning",
+        "yoga_women_evening",
+        "chess_evening",
+        "cricket_evening",
+      ])
+      .optional()
+      .or(z.literal("")),
+    memberStatus: z.enum(["demo", "active", "inactive"]),
+    notes: z.string().trim().max(1000),
+  })
+  .superRefine((contact, context) => {
+    if (contact.clientType !== "turf" && !contact.programSlug) {
+      context.addIssue({
+        code: "custom",
+        path: ["programSlug"],
+        message: "Please select an academy batch.",
+      });
+    }
+    const program = academyPrograms.find(
+      (item) => item.slug === contact.programSlug,
+    );
+    if (program && program.category !== contact.clientType) {
+      context.addIssue({
+        code: "custom",
+        path: ["programSlug"],
+        message: "The selected batch does not match the client type.",
+      });
+    }
+  });
+
+function isCompatibilityError(error: { code?: string; message: string }) {
+  return (
+    error.code === "PGRST204" ||
+    error.message.includes("client_type") ||
+    error.message.includes("program_slug") ||
+    error.message.includes("member_status") ||
+    error.message.includes("fee_kind")
+  );
+}
 
 function unavailable() {
   return NextResponse.json(
@@ -100,6 +178,8 @@ export async function GET() {
         phone: row.customer_phone,
         email: row.customer_email ?? "",
         academyType: row.academy_type,
+        programSlug: row.program_slug ?? "",
+        feeKind: row.fee_kind ?? "monthly",
         description: row.description ?? "",
         amount: row.amount,
         invoiceDate: row.invoice_date,
@@ -107,16 +187,26 @@ export async function GET() {
       }),
     ),
     contacts: contacts.data.map(
-      (row): AdminContact => ({
-        name: row.name,
-        phone: row.phone,
-        email: row.email ?? "",
-        type: row.type ?? "",
-        totalSpent: row.total_spent,
-        invoiceCount: row.invoice_count,
-        bookingCount: row.booking_count,
-        lastSeen: row.last_seen.slice(0, 10),
-      }),
+      (row): AdminContact => {
+        const fallback = decodeContactNotes(row.notes);
+        return {
+          id: row.id,
+          name: row.name,
+          phone: row.phone,
+          email: row.email ?? "",
+          clientType:
+            row.client_type ??
+            (row.type === "multiple" || !row.type ? "turf" : row.type),
+          programSlug: row.program_slug ?? fallback.programSlug,
+          memberStatus: row.member_status ?? fallback.memberStatus,
+          notes: fallback.notes,
+          totalSpent: row.total_spent,
+          invoiceCount: row.invoice_count,
+          bookingCount: row.booking_count,
+          firstSeen: row.first_seen.slice(0, 10),
+          lastSeen: row.last_seen.slice(0, 10),
+        };
+      },
     ),
     transactions: transactions.data.map(
       (row): AdminTransaction => ({
@@ -228,16 +318,77 @@ export async function POST(request: NextRequest) {
     }
 
     const invoice = parsed.data;
+    const amount =
+      invoice.feeKind === "other"
+        ? invoice.amount
+        : invoiceAmountForPlan(invoice.programSlug, invoice.feeKind);
     const result = await supabase.from("invoices").insert({
       customer_name: invoice.customerName,
       customer_phone: invoice.phone,
       customer_email: invoice.email || null,
       academy_type: invoice.academyType,
+      program_slug: invoice.programSlug,
+      fee_kind: invoice.feeKind,
       description: invoice.description || null,
-      amount: invoice.amount,
+      amount,
       invoice_date: invoice.invoiceDate,
       status: invoice.status,
     });
+
+    if (result.error && isCompatibilityError(result.error)) {
+      const fallback = await supabase.from("invoices").insert({
+        customer_name: invoice.customerName,
+        customer_phone: invoice.phone,
+        customer_email: invoice.email || null,
+        academy_type: invoice.academyType,
+        description: invoice.description || null,
+        amount,
+        invoice_date: invoice.invoiceDate,
+        status: invoice.status,
+      });
+      if (!fallback.error) return NextResponse.json({ ok: true }, { status: 201 });
+      return NextResponse.json({ error: fallback.error.message }, { status: 500 });
+    }
+
+    if (result.error) {
+      return NextResponse.json({ error: result.error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ ok: true }, { status: 201 });
+  }
+
+  if (body.resource === "contact") {
+    const parsed = contactSchema.safeParse(body.contact);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: parsed.error.issues[0]?.message ?? "Please check the contact details." },
+        { status: 400 },
+      );
+    }
+
+    const contact = parsed.data;
+    const result = await supabase.from("contacts").insert({
+      name: contact.name,
+      phone: contact.phone,
+      email: contact.email || null,
+      type: contact.clientType,
+      client_type: contact.clientType,
+      program_slug: contact.programSlug || null,
+      member_status: contact.memberStatus,
+      notes: contact.notes || null,
+    });
+
+    if (result.error && isCompatibilityError(result.error)) {
+      const fallback = await supabase.from("contacts").insert({
+        name: contact.name,
+        phone: contact.phone,
+        email: contact.email || null,
+        type: contact.clientType,
+        notes: encodeContactNotes(contact),
+      });
+      if (!fallback.error) return NextResponse.json({ ok: true }, { status: 201 });
+      return NextResponse.json({ error: fallback.error.message }, { status: 500 });
+    }
 
     if (result.error) {
       return NextResponse.json({ error: result.error.message }, { status: 500 });
@@ -297,6 +448,52 @@ export async function PATCH(request: NextRequest) {
     if (transaction.error) {
       return NextResponse.json({ error: transaction.error.message }, { status: 500 });
     }
+    return NextResponse.json({ ok: true });
+  }
+
+  if (body.resource === "contact") {
+    const parsed = contactSchema.safeParse(body.contact);
+    if (!parsed.success || !parsed.data.id) {
+      return NextResponse.json(
+        { error: parsed.error?.issues[0]?.message ?? "Please check the contact details." },
+        { status: 400 },
+      );
+    }
+
+    const contact = parsed.data;
+    const result = await supabase
+      .from("contacts")
+      .update({
+        name: contact.name,
+        phone: contact.phone,
+        email: contact.email || null,
+        type: contact.clientType,
+        client_type: contact.clientType,
+        program_slug: contact.programSlug || null,
+        member_status: contact.memberStatus,
+        notes: contact.notes || null,
+      })
+      .eq("id", contact.id);
+
+    if (result.error && isCompatibilityError(result.error)) {
+      const fallback = await supabase
+        .from("contacts")
+        .update({
+          name: contact.name,
+          phone: contact.phone,
+          email: contact.email || null,
+          type: contact.clientType,
+          notes: encodeContactNotes(contact),
+        })
+        .eq("id", contact.id);
+      if (!fallback.error) return NextResponse.json({ ok: true });
+      return NextResponse.json({ error: fallback.error.message }, { status: 500 });
+    }
+
+    if (result.error) {
+      return NextResponse.json({ error: result.error.message }, { status: 500 });
+    }
+
     return NextResponse.json({ ok: true });
   }
 

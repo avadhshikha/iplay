@@ -6,7 +6,7 @@ Next.js application for public turf bookings and private operations management.
 
 1. Copy `.env.example` to `.env.local`.
 2. Add the Supabase project URL, anon key, and server-only service-role key.
-3. Apply `supabase/migrations/20260606160000_initial_schema.sql` to Supabase.
+3. Apply the SQL files in `supabase/migrations/` to Supabase in filename order.
 4. Run `npm install`, then `npm run dev`.
 
 Without Supabase environment variables, the public page runs in availability
@@ -22,6 +22,14 @@ live Supabase connection and never displays sample operational records.
 
 Invoice records include Preview and PDF actions. PDF downloads are generated
 from live Supabase invoice data as polished A4 documents suitable for sharing.
+
+The admin CMS includes monthly cashflow, configured academy fee plans, a
+filterable/exportable contact book, demo lead capture without payment, and a
+full booking/invoice/transaction history for each contact. Apply
+`supabase/migrations/20260607010000_academy_crm.sql` to store academy batches
+and member statuses in dedicated Supabase columns. Until it is applied, the app
+uses a compatibility format in contact notes so the contact-book workflow can
+still be used.
 
 ## Security
 

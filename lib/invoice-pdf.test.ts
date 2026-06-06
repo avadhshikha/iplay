@@ -12,6 +12,8 @@ describe("invoice PDF", () => {
       phone: "9876500001",
       email: "priya@example.com",
       academyType: "yoga",
+      programSlug: "yoga_morning",
+      feeKind: "monthly",
       description: "Monthly yoga coaching fee",
       amount: 2500,
       invoiceDate: "2026-06-07",

@@ -5,6 +5,7 @@ import { createContext, useCallback, useContext, useEffect, useState } from "rea
 import {
   emptyAdminData,
   type AdminBooking,
+  type AdminContact,
   type AdminData,
   type AdminInvoice,
 } from "@/lib/admin-data";
@@ -22,6 +23,13 @@ type AdminDataContextValue = {
     invoice: Omit<AdminInvoice, "id" | "invoiceNumber">,
   ) => Promise<void>;
   updateInvoiceStatus: (id: string, status: AdminInvoice["status"]) => Promise<void>;
+  createContact: (
+    contact: Omit<
+      AdminContact,
+      "id" | "totalSpent" | "invoiceCount" | "bookingCount" | "firstSeen" | "lastSeen"
+    >,
+  ) => Promise<void>;
+  updateContact: (contact: AdminContact) => Promise<void>;
 };
 
 const AdminDataContext = createContext<AdminDataContextValue | null>(null);
@@ -116,6 +124,8 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
         createInvoice: (invoice) => runAction("POST", { resource: "invoice", invoice }),
         updateInvoiceStatus: (id, status) =>
           runAction("PATCH", { resource: "invoice", id, status }),
+        createContact: (contact) => runAction("POST", { resource: "contact", contact }),
+        updateContact: (contact) => runAction("PATCH", { resource: "contact", contact }),
       }}
     >
       {children}

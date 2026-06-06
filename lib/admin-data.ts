@@ -1,4 +1,10 @@
 import { getEndTime } from "@/lib/slots";
+import type {
+  AcademyProgramSlug,
+  ClientType,
+  InvoiceFeeKind,
+  MemberStatus,
+} from "@/lib/academy-programs";
 
 export type AdminBooking = {
   id: string;
@@ -20,6 +26,8 @@ export type AdminInvoice = {
   phone: string;
   email: string;
   academyType: "yoga" | "chess" | "cricket";
+  programSlug: AcademyProgramSlug | "";
+  feeKind: InvoiceFeeKind;
   description: string;
   amount: number;
   invoiceDate: string;
@@ -27,13 +35,18 @@ export type AdminInvoice = {
 };
 
 export type AdminContact = {
+  id: string;
   name: string;
   phone: string;
   email: string;
-  type: string;
+  clientType: ClientType;
+  programSlug: AcademyProgramSlug | "";
+  memberStatus: MemberStatus;
+  notes: string;
   totalSpent: number;
   invoiceCount: number;
   bookingCount: number;
+  firstSeen: string;
   lastSeen: string;
 };
 
