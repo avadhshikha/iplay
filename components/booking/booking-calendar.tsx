@@ -1,4 +1,4 @@
-import { CalendarDays, LoaderCircle } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, LoaderCircle } from "lucide-react";
 
 import { enumerateDateRange, getBookingCalendarRange } from "@/lib/slots";
 
@@ -10,29 +10,37 @@ type BookingCalendarProps = {
   onSelect: (date: string) => void;
 };
 
-const weekDays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
 function dateAtUtc(date: string) {
   return new Date(`${date}T00:00:00Z`);
 }
 
-function monthLabel(date: string) {
+function dateLabel(date: string, today: string) {
+  const tomorrow = new Date(`${today}T00:00:00Z`);
+  tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+  const tomorrowValue = tomorrow.toISOString().slice(0, 10);
+  if (date === today) return "Today";
+  if (date === tomorrowValue) return "Tomorrow";
   return new Intl.DateTimeFormat("en-IN", {
-    month: "long",
-    year: "numeric",
+    day: "2-digit",
+    month: "short",
     timeZone: "UTC",
   }).format(dateAtUtc(date));
 }
 
-function dayLabel(date: string, availableSlots: number | undefined, past: boolean) {
+function dayLabel(date: string) {
+  return new Intl.DateTimeFormat("en-IN", {
+    weekday: "short",
+    timeZone: "UTC",
+  }).format(dateAtUtc(date));
+}
+
+function accessibleLabel(date: string, availableSlots: number | undefined) {
   const label = new Intl.DateTimeFormat("en-IN", {
     day: "numeric",
     month: "long",
     year: "numeric",
     timeZone: "UTC",
   }).format(dateAtUtc(date));
-
-  if (past) return `${label}, past date`;
   if (availableSlots === 0) return `${label}, fully booked`;
   if (availableSlots === undefined) return label;
   return `${label}, ${availableSlots} slots available`;
@@ -46,91 +54,85 @@ export function BookingCalendar({
   onSelect,
 }: BookingCalendarProps) {
   const range = getBookingCalendarRange(today);
-  const dates = enumerateDateRange(range.start, range.end);
-  const months = Array.from(
-    dates.reduce((grouped, date) => {
-      const key = date.slice(0, 7);
-      const values = grouped.get(key) ?? [];
-      values.push(date);
-      grouped.set(key, values);
-      return grouped;
-    }, new Map<string, string[]>()),
-  );
+  const dates = enumerateDateRange(today, range.end);
+  const selectedIndex = Math.max(0, dates.indexOf(selected));
+  const start = Math.min(Math.max(0, selectedIndex - 2), Math.max(0, dates.length - 5));
+  const visibleDates = dates.slice(start, start + 5);
+  const previousDate = dates
+    .slice(0, selectedIndex)
+    .reverse()
+    .find((date) => availability[date] !== 0);
+  const nextDate = dates
+    .slice(selectedIndex + 1)
+    .find((date) => availability[date] !== 0);
 
   return (
-    <div className="mt-6">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-sm font-bold text-slate-700">Choose your date</p>
-        <p className="flex items-center gap-1.5 text-xs text-slate-500">
-          {loading ? <LoaderCircle size={13} className="animate-spin" /> : <CalendarDays size={13} />}
-          {loading ? "Checking availability" : "Live availability"}
-        </p>
+    <section className="booking-step border-b border-slate-200">
+      <div className="step-heading">
+        <div className="flex items-center gap-2">
+          <CalendarDays size={17} />
+          <h2>1. Select Date</h2>
+          <span className="hidden items-center gap-1 text-[11px] font-medium text-slate-400 sm:flex">
+            {loading && <LoaderCircle size={11} className="animate-spin" />}
+            {loading ? "Checking" : "Live availability"}
+          </span>
+        </div>
+        <div className="flex gap-1">
+          <button
+            type="button"
+            aria-label="Previous date"
+            disabled={!previousDate}
+            onClick={() => previousDate && onSelect(previousDate)}
+            className="date-arrow"
+          >
+            <ChevronLeft size={16} />
+          </button>
+          <button
+            type="button"
+            aria-label="Next date"
+            disabled={!nextDate}
+            onClick={() => nextDate && onSelect(nextDate)}
+            className="date-arrow"
+          >
+            <ChevronRight size={16} />
+          </button>
+        </div>
       </div>
-      <div className="mt-3 grid gap-3 xl:grid-cols-2">
-        {months.map(([month, monthDates]) => {
-          const leadingDays = dateAtUtc(monthDates[0]).getUTCDay();
+      <div className="grid grid-cols-5 gap-2">
+        {visibleDates.map((date) => {
+          const count = availability[date];
+          const full = count === 0;
+          const low = count !== undefined && count < 3;
+          const active = date === selected;
           return (
-            <section
-              key={month}
-              className="rounded-2xl border border-slate-200 bg-slate-50/80 p-3"
+            <button
+              type="button"
+              key={date}
+              disabled={full}
+              aria-label={accessibleLabel(date, count)}
+              aria-pressed={active}
+              onClick={() => onSelect(date)}
+              className={`relative min-w-0 rounded-xl border px-1 py-2 text-center transition sm:px-2 sm:py-3 ${
+                active
+                  ? "border-[#078a2f] bg-[#f1f8f2] text-[#05782b] shadow-[inset_0_0_0_1px_#078a2f]"
+                  : full
+                    ? "cursor-not-allowed border-slate-100 bg-slate-50 text-slate-300"
+                    : "border-slate-200 bg-white text-slate-950 hover:border-[#078a2f]"
+              }`}
             >
-              <h3 className="text-sm font-black text-green-950">
-                {monthLabel(monthDates[0])}
-              </h3>
-              <div className="mt-3 grid grid-cols-7 gap-1 text-center">
-                {weekDays.map((day) => (
-                  <span
-                    key={day}
-                    className="pb-1 text-[9px] font-black uppercase tracking-wide text-slate-400"
-                  >
-                    {day}
-                  </span>
-                ))}
-                {Array.from({ length: leadingDays }, (_, index) => (
-                  <span key={`blank-${index}`} />
-                ))}
-                {monthDates.map((date) => {
-                  const count = availability[date];
-                  const past = date < today;
-                  const full = count === 0;
-                  const low = count !== undefined && count < 3;
-                  const active = date === selected;
-                  return (
-                    <button
-                      type="button"
-                      key={date}
-                      disabled={past || full}
-                      aria-label={dayLabel(date, count, past)}
-                      aria-pressed={active}
-                      onClick={() => onSelect(date)}
-                      className={`min-h-12 rounded-lg border px-1 py-1.5 text-xs font-black transition ${
-                        active
-                          ? "border-green-800 bg-green-700 text-white shadow-sm ring-2 ring-green-200"
-                          : past || full
-                            ? "cursor-not-allowed border-transparent bg-slate-100 text-slate-300"
-                            : low
-                              ? "border-amber-300 bg-amber-50 text-amber-950 hover:border-amber-500"
-                              : "border-transparent bg-white text-green-950 hover:border-green-400"
-                      }`}
-                    >
-                      <span className="block">{Number(date.slice(-2))}</span>
-                      {low && !past && (
-                        <span
-                          className={`mt-0.5 block text-[8px] font-black uppercase tracking-tight ${
-                            active ? "text-green-100" : full ? "text-slate-400" : "text-amber-700"
-                          }`}
-                        >
-                          {full ? "Full" : `${count} left`}
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            </section>
+              {low && !full && (
+                <span className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-amber-400" />
+              )}
+              <strong className="block truncate text-[9px] sm:text-xs">
+                {dateLabel(date, today)}
+              </strong>
+              <span className="mt-0.5 block text-[9px] font-bold sm:text-xs">
+                {dayLabel(date)}
+              </span>
+            </button>
           );
         })}
       </div>
-    </div>
+    </section>
   );
 }

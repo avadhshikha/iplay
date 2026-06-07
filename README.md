@@ -41,6 +41,10 @@ The public booking flow shows the current and next calendar month with live
 full/nearly-full date indicators, then refreshes availability after each saved
 booking.
 
+The public homepage uses a responsive split booking layout on desktop and a
+compact step-by-step booking flow on mobile, with the generated turf hero image
+stored at `public/turf-hero.webp`.
+
 ## Security
 
 - The Supabase service-role key is server-only.

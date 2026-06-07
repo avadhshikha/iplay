@@ -27,3 +27,76 @@ input,
 textarea {
   font: inherit;
 }
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+.booking-step {
+  padding: 1rem 0.75rem;
+}
+
+.duration-step {
+  padding-top: 0.75rem;
+  padding-bottom: 0.75rem;
+}
+
+.step-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+  color: #078a2f;
+}
+
+.step-heading h2 {
+  color: #0f172a;
+  font-size: 0.75rem;
+  font-weight: 900;
+}
+
+.date-arrow {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  color: #64748b;
+  transition: 160ms ease;
+}
+
+.date-arrow:hover:not(:disabled) {
+  border-color: #078a2f;
+  color: #078a2f;
+}
+
+.date-arrow:disabled {
+  opacity: 0.35;
+}
+
+@media (min-width: 640px) {
+  .booking-step {
+    padding: 1.25rem;
+  }
+
+  .step-heading h2 {
+    font-size: 0.875rem;
+  }
+}
+
+@media (min-width: 1280px) {
+  .booking-step {
+    padding: 1rem 1.5rem;
+  }
+
+  .duration-step {
+    padding-top: 0.75rem;
+    padding-bottom: 0.75rem;
+  }
+}
