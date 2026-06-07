@@ -10,15 +10,21 @@ import {
   Smartphone,
 } from "lucide-react";
 
+import { BookingCalendar } from "@/components/booking/booking-calendar";
 import { calculateBookingPrice } from "@/lib/pricing";
 import {
   formatDuration,
   formatSlotLabel,
   generateDurations,
+  getBookingCalendarRange,
   getEndTime,
   getIndiaNowParts,
 } from "@/lib/slots";
-import type { PaymentMode, SlotAvailability } from "@/lib/types";
+import type {
+  DateAvailability,
+  PaymentMode,
+  SlotAvailability,
+} from "@/lib/types";
 
 type FormState = {
   name: string;
@@ -36,36 +42,99 @@ const initialForm: FormState = {
   paymentMode: "upi",
 };
 
+async function fetchSlotsForDate(date: string) {
+  const response = await fetch(`/api/slots?date=${date}`);
+  const payload = await response.json();
+  if (!response.ok) throw new Error(payload.error ?? "Could not load slots.");
+  return (payload.slots ?? []) as SlotAvailability[];
+}
+
+async function fetchDateAvailability(today: string, calendarEnd: string) {
+  const response = await fetch(
+    `/api/availability?from=${today}&to=${calendarEnd}`,
+  );
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload.error ?? "Could not load date availability.");
+  }
+  const availability = (payload.availability ?? []) as DateAvailability[];
+  return Object.fromEntries(
+    availability.map((item) => [item.date, item.availableSlots]),
+  );
+}
+
 export function BookingWizard() {
   const today = useMemo(() => getIndiaNowParts().date, []);
   const [date, setDate] = useState(today);
   const [slots, setSlots] = useState<SlotAvailability[]>([]);
+  const [dateAvailability, setDateAvailability] = useState<Record<string, number>>({});
   const [selected, setSelected] = useState<string[]>([]);
   const [form, setForm] = useState(initialForm);
+  const [loadingDates, setLoadingDates] = useState(true);
   const [loadingSlots, setLoadingSlots] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const calendarEnd = useMemo(() => getBookingCalendarRange(today).end, [today]);
 
   useEffect(() => {
     let active = true;
-
-    fetch(`/api/slots?date=${date}`)
-      .then((response) => response.json())
-      .then((payload) => {
-        if (active) setSlots(payload.slots ?? []);
+    fetchSlotsForDate(date)
+      .then((loadedSlots) => {
+        if (active) setSlots(loadedSlots);
       })
       .catch(() => {
-        if (active) setMessage("Could not load slots. Please try again.");
+        if (active) {
+          setMessage("Could not load slots. Please try again.");
+          setSlots([]);
+        }
       })
       .finally(() => {
         if (active) setLoadingSlots(false);
       });
-
     return () => {
       active = false;
     };
   }, [date]);
+
+  useEffect(() => {
+    let active = true;
+    fetchDateAvailability(today, calendarEnd)
+      .then((availability) => {
+        if (active) setDateAvailability(availability);
+      })
+      .catch(() => {
+        if (active) setDateAvailability({});
+      })
+      .finally(() => {
+        if (active) setLoadingDates(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [calendarEnd, today]);
+
+  async function refreshBookingData() {
+    setLoadingSlots(true);
+    setLoadingDates(true);
+    const [loadedSlots, availability] = await Promise.allSettled([
+      fetchSlotsForDate(date),
+      fetchDateAvailability(today, calendarEnd),
+    ]);
+    setSlots(loadedSlots.status === "fulfilled" ? loadedSlots.value : []);
+    if (availability.status === "fulfilled") {
+      setDateAvailability(availability.value);
+    }
+    setLoadingSlots(false);
+    setLoadingDates(false);
+  }
+
+  function chooseDate(nextDate: string) {
+    setLoadingSlots(true);
+    setDate(nextDate);
+    setSelected([]);
+    setMessage(null);
+  }
 
   function selectStartTime(time: string) {
     const index = slots.findIndex((slot) => slot.time === time);
@@ -121,6 +190,14 @@ export function BookingWizard() {
       return;
     }
 
+    setDateAvailability((current) => ({
+      ...current,
+      [date]: Math.max(
+        0,
+        (current[date] ?? slots.filter((slot) => slot.available).length) -
+          selected.length,
+      ),
+    }));
     setSuccess(true);
     setSubmitting(false);
   }
@@ -149,6 +226,7 @@ export function BookingWizard() {
             setSuccess(false);
             setSelected([]);
             setForm(initialForm);
+            void refreshBookingData();
           }}
           className="mt-8 rounded-xl bg-green-700 px-5 py-3 text-sm font-bold text-white"
         >
@@ -180,21 +258,13 @@ export function BookingWizard() {
         </div>
       </div>
 
-      <label className="mt-6 block text-sm font-bold text-slate-700">
-        Date
-        <input
-          type="date"
-          min={today}
-          value={date}
-          onChange={(event) => {
-            setDate(event.target.value);
-            setLoadingSlots(true);
-            setSelected([]);
-            setMessage(null);
-          }}
-          className="mt-2 block w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none focus:border-green-600 focus:ring-2 focus:ring-green-100"
-        />
-      </label>
+      <BookingCalendar
+        today={today}
+        selected={date}
+        availability={dateAvailability}
+        loading={loadingDates}
+        onSelect={chooseDate}
+      />
 
       <div className="mt-6">
         <div className="flex items-center justify-between">

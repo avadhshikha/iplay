@@ -8,6 +8,16 @@ export const SLOT_INTERVAL_MINUTES = 30;
 export const SLOT_COUNT = 28;
 export const MAX_BOOKING_HOURS = 5;
 
+type BookingWindow = {
+  start_time: string;
+  end_time: string;
+};
+
+type BlockedWindow = {
+  blocked_start: string | null;
+  blocked_end: string | null;
+};
+
 export function timeToMinutes(time: string) {
   const [hours, minutes] = time.slice(0, 5).split(":").map(Number);
   return hours * 60 + minutes;
@@ -62,6 +72,28 @@ export function generateDurations() {
   return Array.from({ length: MAX_BOOKING_HOURS * 2 }, (_, index) => (index + 1) / 2);
 }
 
+export function enumerateDateRange(from: string, to: string) {
+  const [fromYear, fromMonth, fromDay] = from.split("-").map(Number);
+  const [toYear, toMonth, toDay] = to.split("-").map(Number);
+  const current = new Date(Date.UTC(fromYear, fromMonth - 1, fromDay));
+  const end = new Date(Date.UTC(toYear, toMonth - 1, toDay));
+  const dates: string[] = [];
+
+  while (current <= end) {
+    dates.push(current.toISOString().slice(0, 10));
+    current.setUTCDate(current.getUTCDate() + 1);
+  }
+
+  return dates;
+}
+
+export function getBookingCalendarRange(today: string) {
+  const [year, month] = today.split("-").map(Number);
+  const start = `${year}-${String(month).padStart(2, "0")}-01`;
+  const end = new Date(Date.UTC(year, month + 1, 0)).toISOString().slice(0, 10);
+  return { start, end };
+}
+
 export function rangesOverlap(
   firstStart: string,
   firstEnd: string,
@@ -106,11 +138,33 @@ export function isSlotInPast(date: string, startTime: string, now = new Date()) 
 }
 
 export function createDemoSlots(date: string): SlotAvailability[] {
+  return createSlotsForDate(date);
+}
+
+export function createSlotsForDate(
+  date: string,
+  bookings: BookingWindow[] = [],
+  blocks: BlockedWindow[] = [],
+): SlotAvailability[] {
   const price = getHourlyRate(date);
-  return generateSlotTimes().map((time) => ({
-    time,
-    label: formatSlotLabel(time),
-    available: !isSlotInPast(date, time),
-    price,
-  }));
+
+  return generateSlotTimes().map((time) => {
+    const endTime = getEndTime(time, 0.5);
+    const booked = bookings.some((booking) =>
+      rangesOverlap(time, endTime, booking.start_time, booking.end_time),
+    );
+    const blocked = blocks.some(
+      (block) =>
+        !block.blocked_start ||
+        !block.blocked_end ||
+        rangesOverlap(time, endTime, block.blocked_start, block.blocked_end),
+    );
+
+    return {
+      time,
+      label: formatSlotLabel(time),
+      available: !booked && !blocked && !isSlotInPast(date, time),
+      price,
+    };
+  });
 }

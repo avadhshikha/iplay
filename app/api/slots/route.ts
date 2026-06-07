@@ -1,19 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { getHourlyRate } from "@/lib/pricing";
 import {
   createDemoSlots,
-  formatSlotLabel,
-  generateSlotTimes,
-  getEndTime,
-  isSlotInPast,
-  rangesOverlap,
+  createSlotsForDate,
 } from "@/lib/slots";
 import {
   createSupabaseAdminClient,
   isSupabaseConfigured,
 } from "@/lib/supabase/admin";
-import type { SlotAvailability } from "@/lib/types";
 import { dateOnlySchema } from "@/lib/validation";
 
 export async function GET(request: NextRequest) {
@@ -54,26 +48,7 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const price = getHourlyRate(date);
-  const slots: SlotAvailability[] = generateSlotTimes().map((time) => {
-    const endTime = getEndTime(time, 0.5);
-    const booked = bookingsResult.data.some((booking) =>
-      rangesOverlap(time, endTime, booking.start_time, booking.end_time),
-    );
-    const blocked = blocksResult.data.some(
-      (block) =>
-        !block.blocked_start ||
-        !block.blocked_end ||
-        rangesOverlap(time, endTime, block.blocked_start, block.blocked_end),
-    );
-
-    return {
-      time,
-      label: formatSlotLabel(time),
-      available: !booked && !blocked && !isSlotInPast(date, time),
-      price,
-    };
-  });
+  const slots = createSlotsForDate(date, bookingsResult.data, blocksResult.data);
 
   return NextResponse.json({ slots, mode: "live" });
 }

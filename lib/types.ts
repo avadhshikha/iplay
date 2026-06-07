@@ -8,6 +8,11 @@ export type SlotAvailability = {
   price: number;
 };
 
+export type DateAvailability = {
+  date: string;
+  availableSlots: number;
+};
+
 export type BookingRequest = {
   customer_name: string;
   customer_phone: string;

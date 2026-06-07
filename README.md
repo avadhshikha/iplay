@@ -37,6 +37,10 @@ payment mode as Cash or UPI. Apply
 `supabase/migrations/20260607020000_payment_modes_flexible_bookings.sql` before
 using fractional booking durations or payment-mode reporting.
 
+The public booking flow shows the current and next calendar month with live
+full/nearly-full date indicators, then refreshes availability after each saved
+booking.
+
 ## Security
 
 - The Supabase service-role key is server-only.
